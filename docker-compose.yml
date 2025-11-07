@@ -11,17 +11,17 @@ services:
       - app-network
 
   # Ollama LLM Service
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama-data:/root/.ollama
-    pull_policy: always
-    tty: true
-    networks:
-      - app-network
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   pull_policy: always
+  #   tty: true
+  #   networks:
+  #     - app-network
 
   # PostgreSQL Database
   postgres:
@@ -38,50 +38,28 @@ services:
     networks:
       - app-network
 
-  # Express Service
-  express:
-    build:
-      context: ./express
-      dockerfile: Dockerfile
-    container_name: express
-    ports:
-      - "8080:8080"
-    environment:
-      - PORT=8080
-      - OTEL_SERVICE_NAME=express
-      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
-      - OLLAMA_URL=http://ollama:11434
-      - NESTJS_SERVICE_URL=http://nestjs:3000
-      - DATABASE_URL=postgresql://admin:password@postgres:5432/mydb
-    depends_on:
-      - ollama
-      - jaeger
-      - postgres
-      - nestjs
-    networks:
-      - app-network
-    volumes:
-      - ./express:/app
-      - /app/node_modules
-
   nestjs:
     build:
       context: ./nestjs
       dockerfile: Dockerfile
     container_name: nestjs
     ports:
-      - "8081:3000"
+      - "8080:3000"
     environment:
       - PORT=3000
       - OTEL_SERVICE_NAME=nestjs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
       - DATABASE_URL=file:./dev.db
     depends_on:
-      - ollama
+      # - ollama
       - jaeger
       - postgres
     networks:
       - app-network
+    mem_limit: 2G
+    memswap_limit: 2G  # Equal to mem_limit disables swap
+    mem_reservation: 1.6G  # 80% สำหรับระบบที่ต้องการ performance สูง อย่างเช่น E-Commerce
+    cpus: '2.0'
 
 volumes:
   ollama-data:
