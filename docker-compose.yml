@@ -1,5 +1,11 @@
 services:
+  # otel-collector
+  # loki
+  # prometheus
+  # tempo
+
   # Jaeger for trace visualization
+  # Alert (By Use-Case, Notify ให้ได้)
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: jaeger
@@ -68,8 +74,8 @@ services:
     networks:
       - app-network
     mem_limit: 2G
-    memswap_limit: 2G
-    mem_reservation: 1.6G
+    memswap_limit: 2G # (Disk)
+    mem_reservation: 1.6G # (1.6 GB)
     cpus: '2.0'
 
 volumes:
