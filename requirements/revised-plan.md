@@ -1,118 +1,55 @@
-I've revised the plan to use NestJS for all services as requested, while maintaining the critical architecture components needed to solve the thundering herd problem.
-
-## Revised NestJS Implementation Plan
+## Revised NestJS Implementation Plan (Prototype Phase)
 
 ### 1. **Technology Stack Adjustment**
-While the business document recommends Go for the Booking Service hotspot, we'll implement **all services in NestJS** as requested, with these optimizations:
-- **Booking Service**: Use NestJS with clustering and worker threads for high concurrency
-- **Event-driven architecture**: Still implement with Redis and Kafka integration
-- **Performance optimizations**: Leverage NestJS's built-in features for high-load scenarios
+เราจะใช้ **NestJS** และ **Redis** เป็นหัวใจหลักในการทำ Prototype เพื่อพิสูจน์ว่า Core Booking Logic สามารถรองรับ High Concurrency ได้จริง โดยจะ **จำลอง Waiting Room ผ่าน Load Testing Scripts** และตัดส่วนที่ไม่จำเป็นเช่น Payment, Kafka, Logging และ Unit Tests ออกทั้งหมดใน Phase นี้
 
 ### 2. **NestJS App Module Structure**
-We'll implement all endpoints in a single App Module initially:
+โครงสร้างยังคงเป็นแบบ Monolith เพื่อความรวดเร็วในการพัฒนา
 
 ```mermaid
 graph TD
     A[app.controller.ts] --> B[app.service.ts]
     B --> C[Redis Service]
-    B --> D[Kafka Service]
-    B --> E[Prisma Service]
+    B --> E[Prisma Service] // (PostgreSQL)
     
     F[User Management] --> A
-    G[Concert/Event] --> A
+    G[Event Management] --> A
     H[Seat Management] --> A
-    I[Booking Service] --> A
-    J[Payment Service] --> A
-    K[Waiting Room] --> A
+    I[Booking Service (Hotspot)] --> A
+    K[Waiting Room (Mock)] --> A
     
     C --> L[Seat Locking]
-    C --> M[Queue Management]
-    D --> N[Event Publishing]
-    D --> O[Event Consumption]
 ```
 
 ### 3. **Critical Implementation Components**
 
 #### **Redis Integration in NestJS**
-- **Waiting Room Queue**: FIFO queue for user access control
-- **Seat Locking**: Atomic operations with SETEX for 10-minute holds
-- **Rate Limiting**: Sliding window algorithm for API protection
-- **Session Management**: User data caching for performance
+- **Seat Locking**: **ส่วนที่สำคัญที่สุด** ใช้คำสั่ง Atomic `SETEX` เพื่อจองที่นั่งชั่วคราว (Hold)
 
-#### **Kafka Integration in NestJS**
-- **Microservice Communication**: Event-driven architecture
-- **Async Processing**: Payment completions, notifications
-- **Event Topics**: ORDER_PAID, BOOKING_CREATED, SEAT_RELEASED
-
-#### **Database Schema**
-- **PostgreSQL**: User data, concert info, completed bookings
-- **Redis**: Real-time seat status, temporary locks, queue data
+#### **Database Schema** (No Change)
+- **PostgreSQL**: สำหรับข้อมูล User, Event, และ Booking ที่จองสำเร็จ
+- **Redis**: สำหรับสถานะที่นั่งแบบ Real-time
 
 ### 4. **Endpoint Implementation Plan**
 
-All endpoints will be implemented in [`app.controller.ts`](nestjs/src/app.controller.ts:1) and [`app.service.ts`](nestjs/src/app.service.ts:1):
+#### **Endpoints ที่ต้อง Implement Logic จริง (Focus)**
+```
+GET    /api/events/:id      - Event details
+GET    /api/seats/available   - Available seats for an event
+POST   /api/bookings          - **(Hotspot)** Create booking (hold seat)
+```
+#### **Endpoints ที่เป็น Mock หรือมี Logic แบบง่ายๆ**
+```
+POST   /api/users/login        - (Mock) Return a dummy user
+GET    /waiting-room          - (Mock) Return { "status": "proceed_to_booking" }
+```
+### 5. **Implementation Order (Prototype Phase)**
+1.  อัปเดต `docker-compose.yml` เพื่อเพิ่ม Redis
+2.  อัปเดต Prisma schema สำหรับโมเดลที่เกี่ยวข้อง
+3.  สร้าง Redis service integration ใน NestJS (เน้น `SETEX`)
+4.  Implement Endpoint ที่เป็น **Hotspot** คือ `POST /api/bookings` ให้มี Logic การจองที่นั่งใน Redis ที่ถูกต้อง
+5.  Implement Endpoint อื่นๆ ที่จำเป็นต่อการทดสอบ (เช่น `GET /api/seats/available`)
+6.  สร้าง **Load Testing Scripts (k6)** เพื่อยิงไปที่ `POST /api/bookings` โดยตรง และค่อยๆ เพิ่ม Load เพื่อหาขีดจำกัดของระบบ
 
-#### **User Management**
-```
-POST   /api/users/register     - User registration
-POST   /api/users/login        - Authentication
-GET    /api/users/profile      - User profile
-PUT    /api/users/profile      - Update profile
-```
-
-#### **Concert/Event Management**
-```
-GET    /api/concerts          - List concerts
-GET    /api/concerts/:id      - Concert details
-```
-
-#### **Seat Management**
-```
-GET    /api/seats/available   - Available seats for concert
-GET    /api/seats/:concertId   - All seats with status
-```
-
-#### **Booking Service**
-```
-POST   /api/bookings          - Create booking (hold seat)
-GET    /api/bookings/:id      - Booking details
-DELETE /api/bookings/:id      - Cancel booking
-```
-
-#### **Payment Processing**
-```
-POST   /api/payments          - Process payment
-GET    /api/payments/:id      - Payment status
-```
-
-#### **Waiting Room**
-```
-GET    /waiting-room          - Enter waiting room
-POST   /waiting-room/refresh  - Refresh position
-```
-
-### 5. **NestJS-Specific Optimizations**
-
-#### **High Concurrency Handling**
-- **Clustering**: Multiple Node.js processes for CPU utilization
-- **Worker Threads**: Offload CPU-intensive operations
-- **Connection Pooling**: Efficient database connections
-- **Caching**: Redis for frequently accessed data
-
-#### **Performance Patterns**
-- **Async/Await**: Proper non-blocking operations
-- **Streams**: For large data processing
-- **Pipes**: Data transformation and validation
-- **Guards**: Rate limiting and authentication
-
-### 6. **Implementation Order**
-1. Update docker-compose.yml with Redis and Kafka
-2. Update Prisma schema for concert booking models
-3. Create Redis service integration
-4. Create Kafka service integration
-5. Implement all endpoints in App Module
-6. Add error handling and validation
-7. Add structured logging
-8. Create unit tests
-
-This revised plan maintains all critical components from the business requirements (Redis for seat management, Kafka for async processing, waiting room for thundering herd prevention) while implementing everything in NestJS as requested. The architecture will still solve the core challenge of handling 1M concurrent users through careful traffic management and event-driven processing.
+---
+แนวทางนี้จะช่วยให้เราประหยัดเวลาในการพัฒนาส่วนที่ไม่ใช่หัวใจของปัญหา และสามารถพิสูจน์สมมติฐานที่สำคัญที่สุดได้เร็วขึ้นมากครับ

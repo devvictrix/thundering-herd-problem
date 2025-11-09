@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider      = "prisma-client-js"
   output        = "../generated/prisma"
@@ -11,22 +8,58 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id    Int     @default(autoincrement()) @id
-  email String  @unique
-  name  String?
-  posts Post[]
+  id       Int       @id @default(autoincrement())
+  email    String    @unique
+  name     String?
+  bookings Booking[]
 }
 
-model Post {
-  id        Int      @default(autoincrement()) @id
-  title     String
-  content   String?
-  published Boolean? @default(false)
-  author    User?    @relation(fields: [authorId], references: [id])
-  authorId  Int?
+model Event {
+  id    Int    @id @default(autoincrement())
+  name  String
+  date  DateTime
+  seats Seat[]
+}
+
+model Seat {
+  id         Int      @id @default(autoincrement())
+  seatNumber String // e.g., "A1", "B12"
+  status     SeatStatus @default(AVAILABLE)
+  
+  eventId    Int
+  event      Event    @relation(fields: [eventId], references: [id])
+
+  bookingId  Int?
+  booking    Booking? @relation(fields: [bookingId], references: [id])
+
+  @@unique([eventId, seatNumber]) // A seat number must be unique per event
+}
+
+model Booking {
+  id        Int           @id @default(autoincrement())
+  status    BookingStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  expiresAt DateTime
+
+  userId    Int
+  user      User          @relation(fields: [userId], references: [id])
+  seats     Seat[]
+}
+
+enum SeatStatus {
+  AVAILABLE
+  HELD
+  SOLD
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
 }

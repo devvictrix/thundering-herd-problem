@@ -1,15 +1,4 @@
 services:
-  # Jaeger for trace visualization
-  jaeger:
-    image: jaegertracing/all-in-one:latest
-    container_name: jaeger
-    ports:
-      - "16686:16686" # Jaeger UI
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    networks:
-      - app-network
-
   # Ollama LLM Service
   # ollama:
   #   image: ollama/ollama:latest
@@ -22,6 +11,17 @@ services:
   #   tty: true
   #   networks:
   #     - app-network
+
+  # Jaeger for trace visualization
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - app-network
 
   # PostgreSQL Database
   postgres:
@@ -38,6 +38,15 @@ services:
     networks:
       - app-network
 
+  # Redis for Caching and Seat Locking
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
   nestjs:
     build:
       context: ./nestjs
@@ -49,11 +58,11 @@ services:
       - PORT=3000
       - OTEL_SERVICE_NAME=nestjs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
-      - DATABASE_URL=file:./dev.db
+      - DATABASE_URL=postgresql://admin:password@postgres:5432/mydb?schema=public
     depends_on:
-      # - ollama
       - jaeger
       - postgres
+      - redis
     networks:
       - app-network
     mem_limit: 2G
@@ -64,6 +73,7 @@ services:
 volumes:
   ollama-data:
   postgres-data:
+  redis-data:
 
 networks:
   app-network:
