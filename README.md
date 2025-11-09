@@ -1,211 +1,167 @@
-# Node.js Demo with Docker and OpenTelemetry
+# Thundering Herd Problem - NestJS Prototype
 
-This project demonstrates microservices architecture with Express and NestJS services, Ollama LLM integration, and OpenTelemetry tracing with Jaeger visualization.
+This project implements a prototype solution for the thundering herd problem in a ticket booking system using NestJS, Redis, and PostgreSQL.
 
 ## Architecture
 
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  Express    │────│   NestJS    │    │   Ollama    │
-│ (Port 8080) │    │ (Port 8081) │    │ (Port 11434)│
-└─────────────┘    └─────────────┘    └─────────────┘
-       │                   │                   │
-       └───────────────────┼───────────────────┘
-                           │
-                  ┌─────────────┐
-                  │   Jaeger    │
-                  │ (Port 16686)│
-                  └─────────────┘
-```
+The system uses a monolithic NestJS architecture with the following key components:
 
-## Services
+- **Redis**: For atomic seat locking using `SETEX` operations
+- **PostgreSQL**: For persistent data storage (users, events, seats, bookings)
+- **NestJS**: Web framework providing REST API endpoints
 
-- **express**: Main service that calls NestJS and Ollama
-- **nestjs**: Secondary service built with NestJS framework
-- **ollama**: LLM service (llama3.2 model)
-- **jaeger**: Distributed trace visualization tool
+## Core Features
 
-## Quick Start
+1. **Seat Locking Mechanism**: Atomic seat locking using Redis to prevent double bookings
+2. **Booking Service**: Creates bookings with PENDING status and 10-minute expiration
+3. **Event Management**: API to view event details and available seats
+4. **Mock Endpoints**: Simplified user login and waiting room for testing
 
-1. **Start all services:**
-   ```bash
-   ./setup.sh
-   ```
-   Or manually:
-   ```bash
-   docker compose up -d
-   ```
+## Setup Instructions
 
-2. **Pull the llama3.2 model:**
-   ```bash
-   docker compose exec ollama ollama pull llama3.2
-   ```
+### Prerequisites
 
-3. **Test the services:**
-   ```bash
-   # Test express (calls nestjs and Ollama)
-   curl http://localhost:8080
-   
-   # Test nestjs endpoints
-   curl http://localhost:8081
-   curl http://localhost:8081/health
-   curl http://localhost:8081/users/123
-   curl http://localhost:8081/slow
-   ```
+- Docker and Docker Compose
+- Node.js (for running k6 load tests)
+- k6 (for load testing)
 
-## Access Points
-
-- **Express**: http://localhost:8080
-- **NestJS**: http://localhost:8081
-- **Jaeger UI**: http://localhost:16686
-- **Ollama API**: http://localhost:11434
-
-## Available Endpoints
-
-### Express Service (Port 8080)
-- `GET /` - Main endpoint that calls NestJS and Ollama
-
-### NestJS Service (Port 8081)
-- `GET /` - Basic hello message
-- `GET /health` - Health check endpoint
-- `GET /users/:id` - Get user by ID
-- `POST /users` - Create new user
-- `GET /slow` - Slow endpoint for tracing demonstration
-
-## OpenTelemetry Configuration
-
-### Environment Variables
-
-- `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`: Jaeger OTLP endpoint for traces
-- `OTEL_SERVICE_NAME`: Service name for tracing identification
-- `NESTJS_SERVICE_URL`: NestJS service URL for Express to call
-- `OLLAMA_URL`: Ollama service URL
-
-### Instrumentation Setup
-
-Both services use OpenTelemetry with automatic instrumentation:
-
-1. **Express Service**: Uses `instrumentation.ts` with automatic node instrumentation
-2. **NestJS Service**: Uses `src/instrumentation.ts` with the same configuration
-
-The instrumentation files are imported first in the application entry points to ensure proper module patching.
-
-### Tracing Features
-
-- Automatic HTTP request/response tracing
-- Service-to-service communication tracing
-- Custom span attributes and events
-- Distributed context propagation
-- Error handling and exception tracing
-
-## Development
-
-### Local Development
+### 1. Start the Infrastructure
 
 ```bash
-# Start services individually
-cd express && npm run dev
-cd nestjs && npm run dev
-ollama serve
+# Start all services
+docker-compose up -d --build
+
+# Wait for all services to be ready
+# You can check logs with: docker-compose logs -f nestjs
 ```
 
-### View Logs
+### 2. Initialize the Database
 
 ```bash
-# View all service logs
-docker compose logs -f
+# Enter the NestJS container
+docker exec -it nestjs bash
 
-# View specific service logs
-docker compose logs -f express
-docker compose logs -f nestjs
-docker compose logs -f ollama
-docker compose logs -f jaeger
+# Generate Prisma client
+npx prisma generate
+
+# Run database migrations
+npx prisma migrate dev --name init
+
+# Seed the database with test data
+npm run seed
 ```
 
-### Stop Services
+### 3. Verify the Setup
+
+Test that the API is working:
 
 ```bash
-# Stop and remove containers
-docker compose down
+# Check available seats
+curl http://localhost:8080/api/seats/available?eventId=1
 
-# Stop and remove with volumes
-docker compose down -v
+# Get event details
+curl http://localhost:8080/api/events/1
+
+# Test mock login
+curl -X POST http://localhost:8080/api/users/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password"}'
+
+# Test waiting room
+curl http://localhost:8080/waiting-room
 ```
 
-## Configuration
+### 4. Load Testing
 
-### Docker Compose Services
+#### Simple Load Test
 
-- **express**: Runs on port 8080, uses volume mounts for development
-- **nestjs**: Runs on port 8081 (external), 3000 (internal), uses multi-stage build
-- **jaeger**: All-in-one Jaeger with OTLP collector enabled
-- **ollama**: LLM service with persistent data volume
+```bash
+# Install k6 if not already installed
+# (Follow instructions at https://k6.io/docs/getting-started/installation/)
 
-### Network Configuration
+# Run the simple load test
+k6 run load-testing/simple-load-test.js
+```
 
-All services communicate through a shared Docker network (`app-network`) using service names as hostnames.
+#### Advanced Load Test
+
+```bash
+# Run the comprehensive load test
+k6 run load-testing/booking-load-test.js
+```
+
+## API Endpoints
+
+### Core Booking Endpoints
+
+- `POST /api/bookings` - Create a new booking (HOTSPOT)
+- `GET /api/events/:id` - Get event details
+- `GET /api/seats/available` - Get available seats for an event
+
+### Mock Endpoints
+
+- `POST /api/users/login` - Mock user authentication
+- `GET /waiting-room` - Mock waiting room status
+
+## Key Implementation Details
+
+### Redis Seat Locking
+
+The system uses Redis `SETEX` with NX (Not Exists) flag for atomic seat locking:
+
+```typescript
+// Lock a seat for 10 minutes
+await redis.set(key, value, 'EX', 600, 'NX');
+```
+
+This ensures that only one user can successfully lock a seat at a time, preventing double bookings.
+
+### Booking Flow
+
+1. Client requests to book a seat
+2. System attempts atomic lock in Redis
+3. If successful, creates PENDING booking in PostgreSQL
+4. Updates seat status to HELD
+5. Returns booking details with 10-minute expiration
+
+## Load Testing Scenarios
+
+The load testing includes multiple scenarios:
+
+1. **Normal Load**: Multiple users booking different seats
+2. **Thundering Herd**: Many users trying to book the same popular seat
+3. **High Concurrency**: Large number of users with different seats
+
+## Monitoring
+
+- **Jaeger**: Available at http://localhost:16686 for distributed tracing
+- **Application Logs**: Console output for debugging
+- **k6 Metrics**: Built-in performance metrics
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Ollama model not found:**
-   ```bash
-   docker-compose exec ollama ollama pull llama3.2
-   ```
+1. **Port Conflicts**: Ensure ports 5432, 6379, 8080, and 16686 are available
+2. **Database Connection**: Check PostgreSQL is running and accessible
+3. **Redis Connection**: Verify Redis is running and accessible
 
-2. **Services can't communicate:**
-   - Check if all services are running: `docker compose ps`
-   - Verify network connectivity: `docker compose exec express ping nestjs`
-   - Check port configurations in docker-compose.yml
-
-3. **No traces in Jaeger:**
-   - Check if Jaeger is running: `docker compose ps jaeger`
-   - Verify OTLP endpoint configuration in environment variables
-   - Check service logs: `docker compose logs express nestjs`
-   - Ensure `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set correctly
-
-4. **NestJS build issues:**
-   - Rebuild the service: `docker compose up -d --build nestjs`
-   - Check for TypeScript compilation errors
-   - Verify package.json dependencies
-
-5. **Port conflicts:**
-   - Ensure no other services are using ports 8080, 8081, 11434, or 16686
-   - Check Docker port mappings in docker-compose.yml
-
-### Reset Everything
+### Resetting the System
 
 ```bash
-# Complete reset
-docker compose down -v
-docker system prune -f
-docker compose up -d
+# Stop all services
+docker-compose down
+
+# Remove volumes (optional, deletes all data)
+docker-compose down -v
+
+# Start fresh
+docker-compose up -d --build
 ```
 
-## Learning OpenTelemetry
+## Development Notes
 
-This setup is perfect for learning:
-- How to add automatic instrumentation to Node.js applications
-- Understanding distributed tracing in microservices
-- Service-to-service communication patterns
-- OpenTelemetry configuration and best practices
-- Jaeger trace visualization and analysis
-
-## Next Steps
-
-1. **Add OpenTelemetry Collector** for advanced observability
-2. **Implement manual instrumentation** for custom business logic
-3. **Add custom metrics** with Prometheus
-4. **Explore different tracing scenarios** (async operations, database calls)
-5. **Add more services** to demonstrate complex distributed tracing
-6. **Implement sampling strategies** for production environments
-
-## Learn More
-
-- [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
-- [NestJS Documentation](https://docs.nestjs.com/)
-- [Ollama Documentation](https://github.com/ollama/ollama)
-- [Express.js Documentation](https://expressjs.com/)
-- [Docker Documentation](https://docs.docker.com/)
-- [Jaeger Documentation](https://www.jaegertracing.io/docs/)
+- The system is designed for prototype/testing purposes
+- Error handling focuses on preventing race conditions
+- All seat locks expire after 10 minutes
+- The system uses optimistic locking with Redis as the source of truth

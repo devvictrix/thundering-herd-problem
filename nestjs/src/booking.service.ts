@@ -3,9 +3,9 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from './prisma.service';
 import { RedisService } from './redis.service';
-import { Booking } from 'generated/prisma';
+import { PrismaService } from './prisma.service';
+import { Booking } from '@prisma/client';
 
 @Injectable()
 export class BookingService {

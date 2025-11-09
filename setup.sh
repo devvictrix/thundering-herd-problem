@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Setting up Node.js Demo with Docker..."
+echo "🚀 Setting up the Thundering Herd prototype..."
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
@@ -8,7 +8,7 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check for docker compose (modern) or docker-compose (legacy)
+# Check for docker compose command
 DOCKER_COMPOSE_CMD=""
 if command -v docker &> /dev/null && docker compose version &> /dev/null; then
     DOCKER_COMPOSE_CMD="docker compose"
@@ -21,27 +21,48 @@ else
     exit 1
 fi
 
-echo "📦 Building and starting services..."
-$DOCKER_COMPOSE_CMD up -d --build
+# Clean up old migration history to allow provider switch
+echo "🧹 Cleaning up old migration history..."
+rm -rf ./nestjs/prisma/migrations
+rm -rf ./nestjs/generated 
 
-echo "⏳ Waiting for services to be ready..."
-sleep 10
+echo "📦 Building and starting services... (This may take a moment)"
+$DOCKER_COMPOSE_CMD down -v
+if ! $DOCKER_COMPOSE_CMD up -d --build; then
+    echo "❌ Docker build failed. Please check the error messages above."
+    exit 1
+fi
 
-echo "🤖 Pulling llama3.2 model..."
-$DOCKER_COMPOSE_CMD exec -T ollama ollama pull llama3.2
+echo "⏳ Waiting for services to be healthy..."
+# We add a small delay to ensure services are fully initialized internally
+sleep 10 
 
-echo "✅ Setup complete!"
+echo "🔄 Applying database migrations..."
+if ! $DOCKER_COMPOSE_CMD exec -T nestjs npx prisma migrate dev --name init; then
+    echo "❌ Database migration failed. Please check the logs."
+    $DOCKER_COMPOSE_CMD logs nestjs
+    exit 1
+fi
+
+# --- THE NEW STEP: SEEDING THE DATABASE ---
+echo "🌱 Seeding the database with initial data..."
+if ! $DOCKER_COMPOSE_CMD exec -T nestjs npx prisma db seed; then
+    echo "❌ Database seeding failed. Please check the logs."
+    $DOCKER_COMPOSE_CMD logs nestjs
+    exit 1
+fi
+
+echo "✅ Setup complete! System is ready for load testing."
 echo ""
 echo "🌐 Access points:"
-echo "   NestJS: http://localhost:8080"
-echo "   Jaeger UI: http://localhost:16686"
-echo "   Ollama API: http://localhost:11434"
+echo "   NestJS API: http://localhost:8080"
+echo "   Jaeger UI:  http://localhost:16686"
 echo ""
-echo "🧪 Test the services:"
-echo "   curl http://localhost:8080"
+echo "🧪 To run a load test (e.g., 100 virtual users for 1 minute):"
+echo "   k6 run --vus 100 --duration 1m load-testing/load-test.js"
 echo ""
-echo "📊 View logs:"
+echo "📊 To view logs:"
 echo "   $DOCKER_COMPOSE_CMD logs -f"
 echo ""
-echo "🛑 Stop services:"
+echo "🛑 To stop all services:"
 echo "   $DOCKER_COMPOSE_CMD down"

@@ -1,125 +1,86 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
+import { randomIntBetween, randomItem } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
 
-// Custom metrics
+// --- Metrics ---
+// Custom metric to track genuine server errors (excluding 409 Conflict, which is expected)
 export let errorRate = new Rate('errors');
 
-// Test configuration
+// --- Test Configuration ---
+// This is a baseline stress test. We will override these values from the command line
+// as per requirements/load-generator.md to gradually increase the load.
 export let options = {
   stages: [
-    { duration: '2m', target: 1000 },   // Ramp up to 1,000 users
-    { duration: '5m', target: 5000 },   // Ramp up to 5,000 users
-    { duration: '10m', target: 10000 }, // Ramp up to 10,000 users
-    { duration: '20m', target: 15000 }, // Peak at 15,000 users
-    { duration: '5m', target: 0 },      // Ramp down
+    { duration: '10s', target: 100 },  // Ramp-up to 100 virtual users over 10s
+    { duration: '20s', target: 500 },  // Ramp-up to 500 virtual users over 20s
+    { duration: '30s', target: 1000 }, // Hold 1000 virtual users for 30s
+    { duration: '10s', target: 0 },    // Ramp-down
   ],
   thresholds: {
-    http_req_duration: ['p(95)<500'],   // 95% of requests under 500ms
-    http_req_failed: ['rate<0.1'],      // Error rate below 10%
-    errors: ['rate<0.1'],
+    // 95% of requests should be faster than 800ms.
+    http_req_duration: ['p(95)<800'],
+    // The rate of genuine errors should be less than 5%.
+    errors: ['rate<0.05'],
   },
 };
 
-const BASE_URL = 'https://your-concert-booking-app.com';
+// --- Test Constants ---
+const BASE_URL = 'http://localhost:8080';
+const EVENT_ID = 1; // We will test a single event with ID 1
+const SEAT_ROWS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K']; // 10 Rows
+const SEAT_PER_ROW = 50; // 50 Seats per row
 
+// --- Setup ---
+// This function runs once before the test starts.
+// For a real test, you might pre-load users or fetch data here.
 export function setup() {
-  // Setup code - create test data, authenticate, etc.
-  console.log('Setting up test environment...');
-  return { authToken: 'test-token' };
+  console.log('Setting up test environment... Targeting Event ID:', EVENT_ID);
+  // Ensure that a User with ID matching the VU count exists. We'll simulate this.
+  // The user ID will be the virtual user ID (__VU).
 }
 
-export default function(data) {
-  // Simulate user entering waiting room
-  let waitingRoomResponse = http.get(`${BASE_URL}/waiting-room`, {
+// --- Main Test Logic ---
+// This function is the main loop for each Virtual User (VU).
+export default function () {
+  // 1. Generate a random seat for this user to attempt to book.
+  // This simulates thousands of users trying to grab seats from the same pool.
+  const randomSeat = `${randomItem(SEAT_ROWS)}${randomIntBetween(1, SEAT_PER_ROW)}`;
+
+  // 2. Define the booking payload.
+  // We use `__VU` which is a unique ID for each virtual user.
+  const payload = JSON.stringify({
+    userId: __VU,       // Each virtual user is a unique user
+    eventId: EVENT_ID,
+    seatNumber: randomSeat,
+  });
+
+  const params = {
     headers: {
-      'Authorization': `Bearer ${data.authToken}`,
-      'User-Agent': 'k6-load-test',
+      'Content-Type': 'application/json',
     },
+  };
+
+  // 3. Send the POST request to the booking endpoint. This is our "hotspot".
+  const res = http.post(`${BASE_URL}/api/bookings`, payload, params);
+
+  // 4. Check the response.
+  // A successful booking is HTTP 201 (Created).
+  // An expected failure is HTTP 409 (Conflict) when two users try for the same seat.
+  // Both are considered "correct" system behavior. Any other status is an error.
+  const isCorrectBehavior = check(res, {
+    'booking successful (201) or seat taken (409)': (r) => r.status === 201 || r.status === 409,
   });
-  
-  let waitingRoomOK = check(waitingRoomResponse, {
-    'waiting room status is 200': (r) => r.status === 200,
-    'waiting room response time < 1000ms': (r) => r.timings.duration < 1000,
-  });
-  
-  errorRate.add(!waitingRoomOK);
-  
-  // Simulate user being released from waiting room
-  sleep(Math.random() * 3 + 1); // Random wait 1-4 seconds
-  
-  // Get available seats
-  let seatsResponse = http.get(`${BASE_URL}/api/seats/available`, {
-    headers: {
-      'Authorization': `Bearer ${data.authToken}`,
-    },
-  });
-  
-  let seatsOK = check(seatsResponse, {
-    'seats status is 200': (r) => r.status === 200,
-    'seats returned data': (r) => JSON.parse(r.body).seats.length > 0,
-  });
-  
-  errorRate.add(!seatsOK);
-  
-  if (seatsOK) {
-    let seats = JSON.parse(seatsResponse.body).seats;
-    let randomSeat = seats[Math.floor(Math.random() * seats.length)];
-    
-    // Attempt to book a seat
-    let bookingResponse = http.post(`${BASE_URL}/api/bookings`, 
-      JSON.stringify({
-        seatId: randomSeat.id,
-        concertId: 'blackpink-world-tour-2024',
-      }), 
-      {
-        headers: {
-          'Authorization': `Bearer ${data.authToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    
-    let bookingOK = check(bookingResponse, {
-      'booking status is 200 or 409': (r) => r.status === 200 || r.status === 409, // 409 for seat already taken
-      'booking response time < 2000ms': (r) => r.timings.duration < 2000,
-    });
-    
-    errorRate.add(!bookingOK);
-    
-    if (bookingResponse.status === 200) {
-      let booking = JSON.parse(bookingResponse.body);
-      
-      // Simulate payment process
-      sleep(Math.random() * 5 + 2); // Random wait 2-7 seconds
-      
-      let paymentResponse = http.post(`${BASE_URL}/api/payments`, 
-        JSON.stringify({
-          bookingId: booking.id,
-          paymentMethod: 'credit_card',
-          amount: booking.price,
-        }), 
-        {
-          headers: {
-            'Authorization': `Bearer ${data.authToken}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-      
-      let paymentOK = check(paymentResponse, {
-        'payment status is 200 or 402': (r) => r.status === 200 || r.status === 402, // 402 for payment failed
-        'payment response time < 5000ms': (r) => r.timings.duration < 5000,
-      });
-      
-      errorRate.add(!paymentOK);
-    }
-  }
-  
-  // Think time between requests
-  sleep(Math.random() * 2 + 1);
+
+  // 5. Add to our custom error rate ONLY if the behavior was incorrect.
+  // This separates system failures from expected business logic conflicts.
+  errorRate.add(!isCorrectBehavior);
+
+  // Simulate user "think time" between attempts.
+  sleep(randomIntBetween(1, 3));
 }
 
+// --- Teardown ---
 export function teardown(data) {
-  console.log('Test completed. Cleaning up...');
+  console.log('Test completed.');
 }

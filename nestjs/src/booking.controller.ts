@@ -1,4 +1,12 @@
-import { Controller, Post, Body, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpException,
+  HttpStatus,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { BookingService } from './booking.service';
 
 class CreateBookingDto {
@@ -16,11 +24,20 @@ export class BookingController {
     try {
       return await this.bookingService.createBooking(body);
     } catch (error) {
-      if (error.status === HttpStatus.CONFLICT || error.status === HttpStatus.NOT_FOUND) {
-        throw new HttpException(error.message, error.status);
+      if (
+        error instanceof ConflictException ||
+        error instanceof NotFoundException
+      ) {
+        // Re-throw known exceptions directly, OTel will not mark them as span errors
+        throw error;
       }
+
       console.error('Unhandled booking error:', error);
-      throw new HttpException('Internal Server Error', HttpStatus.INTERNAL_SERVER_ERROR);
+
+      throw new HttpException(
+        'Internal Server Error',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
     }
   }
 }

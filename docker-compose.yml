@@ -1,17 +1,4 @@
 services:
-  # Ollama LLM Service
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama-data:/root/.ollama
-  #   pull_policy: always
-  #   tty: true
-  #   networks:
-  #     - app-network
-
   # Jaeger for trace visualization
   jaeger:
     image: jaegertracing/all-in-one:latest
@@ -25,7 +12,7 @@ services:
 
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16 # --- CHANGED: Use the full postgres image, not alpine ---
     container_name: postgres
     ports:
       - "5432:5432"
@@ -37,6 +24,12 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - app-network
+    # --- CORRECTED HEALTHCHECK ---
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # Redis for Caching and Seat Locking
   redis:
@@ -46,6 +39,11 @@ services:
       - "6379:6379"
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   nestjs:
     build:
@@ -54,24 +52,27 @@ services:
     container_name: nestjs
     ports:
       - "8080:3000"
+    restart: unless-stopped
     environment:
       - PORT=3000
       - OTEL_SERVICE_NAME=nestjs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
       - DATABASE_URL=postgresql://admin:password@postgres:5432/mydb?schema=public
     depends_on:
-      - jaeger
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy # Changed to healthy to be more robust
+      jaeger:
+        condition: service_started
     networks:
       - app-network
     mem_limit: 2G
-    memswap_limit: 2G  # Equal to mem_limit disables swap
-    mem_reservation: 1.6G  # 80% สำหรับระบบที่ต้องการ performance สูง อย่างเช่น E-Commerce
+    memswap_limit: 2G
+    mem_reservation: 1.6G
     cpus: '2.0'
 
 volumes:
-  ollama-data:
   postgres-data:
   redis-data:
 
