@@ -22,6 +22,7 @@ services:
     container_name: postgres
     ports:
       - "5432:5432"
+    command: postgres -c max_connections=200 # default is 100
     environment:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=password
@@ -63,7 +64,7 @@ services:
       - PORT=3000
       - OTEL_SERVICE_NAME=nestjs
       - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://jaeger:4318/v1/traces
-      - DATABASE_URL=postgresql://admin:password@postgres:5432/mydb?schema=public
+      - DATABASE_URL=postgresql://admin:password@postgres:5432/mydb?schema=public&connection_limit=100
     depends_on:
       postgres:
         condition: service_healthy

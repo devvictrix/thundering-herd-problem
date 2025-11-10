@@ -10,17 +10,37 @@ export let errorRate = new Rate('errors');
 // --- Test Configuration ---
 // This is a baseline stress test. We will override these values from the command line
 // as per requirements/load-generator.md to gradually increase the load.
+// export let options = {
+//   stages: [
+//     { duration: '10s', target: 100 },  // Ramp-up to 100 virtual users over 10s
+//     { duration: '20s', target: 500 },  // Ramp-up to 500 virtual users over 20s
+//     { duration: '30s', target: 1000 }, // Hold 1000 virtual users for 30s
+//     { duration: '10s', target: 0 },    // Ramp-down
+//   ],
+//   thresholds: {
+//     // 95% of requests should be faster than 800ms.
+//     http_req_duration: ['p(95)<800'],
+//     // The rate of genuine errors should be less than 5%.
+//     errors: ['rate<0.05'],
+//   },
+// };
+
 export let options = {
-  stages: [
-    { duration: '10s', target: 100 },  // Ramp-up to 100 virtual users over 10s
-    { duration: '20s', target: 500 },  // Ramp-up to 500 virtual users over 20s
-    { duration: '30s', target: 1000 }, // Hold 1000 virtual users for 30s
-    { duration: '10s', target: 0 },    // Ramp-down
-  ],
+  scenarios: {
+    // กำหนดชื่อ scenario
+    target_rps_test: {
+      executor: 'constant-arrival-rate', // --- ใช้ executor ที่เน้น RPS ---
+
+      // --- Configuration for 5,000 RPS ---
+      rate: 5000,      // พยายามสร้าง request ใหม่ 5,000 ครั้ง
+      timeUnit: '1s',    // ในทุกๆ 1 วินาที
+      duration: '5m',    // ทดสอบเป็นเวลา 5 นาที
+      preAllocatedVUs: 1000, // เตรียม VUs ไว้ล่วงหน้า
+      maxVUs: 25000,      // และให้ k6 สร้าง VUs เพิ่มได้สูงสุดตามต้องการเพื่อไปให้ถึงเป้าหมาย
+    },
+  },
   thresholds: {
-    // 95% of requests should be faster than 800ms.
     http_req_duration: ['p(95)<800'],
-    // The rate of genuine errors should be less than 5%.
     errors: ['rate<0.05'],
   },
 };

@@ -165,3 +165,5 @@ docker-compose up -d --build
 - Error handling focuses on preventing race conditions
 - All seat locks expire after 10 minutes
 - The system uses optimistic locking with Redis as the source of truth
+
+docker compose exec postgres psql -U admin -d mydb -c "SHOW max_connections;"
