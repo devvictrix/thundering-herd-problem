@@ -167,3 +167,6 @@ docker-compose up -d --build
 - The system uses optimistic locking with Redis as the source of truth
 
 docker compose exec postgres psql -U admin -d mydb -c "SHOW max_connections;"
+
+## Jaeger
+  - https://www.jaegertracing.io/docs/2.11/architecture/spm/

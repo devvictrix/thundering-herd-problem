@@ -7,7 +7,7 @@ services:
   # Jaeger for trace visualization
   # Alert (By Use-Case, Notify ให้ได้)
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image:  jaegertracing/jaeger:2.11.0
     container_name: jaeger
     ports:
       - "16686:16686" # Jaeger UI
